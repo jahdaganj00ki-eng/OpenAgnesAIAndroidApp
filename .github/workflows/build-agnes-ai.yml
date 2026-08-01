@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      ANDROID_HOME: /usr/local/lib/android
+      ANDROID_HOME: /usr/local/lib/android/sdk
       BUILD_TOOLS_VERSION: 34.0.0
 
     steps:
@@ -30,8 +30,19 @@ jobs:
           sudo apt-get install -y apktool
           apktool --version
 
-      - name: Setup Android SDK
+      - name: Setup Android SDK with build-tools
         uses: android-actions/setup-android@v3
+        with:
+          build-tools-version: ${{ env.BUILD_TOOLS_VERSION }}
+          cache-disabled: false
+
+      - name: Verify aapt availability
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          ls -la "$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION"
+          "$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/aapt" version
+          echo "$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION" >> $GITHUB_PATH
 
       - name: Extract base APK
         run: |
@@ -48,6 +59,14 @@ jobs:
       - name: Decompile with apktool
         run: |
           apktool d /tmp/apk-work/base.apk -o /tmp/apk-work/apktool -f
+
+      - name: Fix duplicate resource in styles.xml
+        run: |
+          if [ -f /tmp/apk-work/apktool/res/values-v31/styles.xml ]; then
+            sed -i '/android:windowSplashScreenBackground/d' /tmp/apk-work/apktool/res/values-v31/styles.xml
+            sed -i '/android:windowSplashScreenBackground/d' /tmp/apk-work/apktool/res/values-night-v31/styles.xml
+            echo "Fixed duplicate splash screen background"
+          fi
 
       - name: Patch BuildConfig URLs
         run: |
