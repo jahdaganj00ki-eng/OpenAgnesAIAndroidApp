@@ -1,0 +1,107 @@
+name: Build Agnes AI Patched APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install apktool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apktool
+          apktool --version
+
+      - name: Install Android SDK build tools
+        run: |
+          sudo apt-get install -y wget unzip
+          wget -q https://dl.google.com/android/repository/build-tools/34.0.0/android-34.zip -O /tmp/build-tools.zip
+          unzip -q /tmp/build-tools.zip -d /tmp/android-sdk
+          echo "/tmp/android-sdk/android-34" >> $GITHUB_PATH
+
+      - name: Extract base APK
+        run: |
+          mkdir -p /tmp/apk-work
+          python3 -c "
+          import zipfile, shutil, os
+          src = 'Original-App/Agnes 3.0.47.apk+'
+          dst = '/tmp/apk-work/base.apk'
+          with zipfile.ZipFile(src, 'r') as z:
+              z.extract('base.apk', '/tmp/apk-work')
+          print('Extracted base.apk:', os.path.getsize(dst))
+          "
+
+      - name: Decompile with apktool
+        run: |
+          apktool d /tmp/apk-work/base.apk -o /tmp/apk-work/apktool -f
+
+      - name: Patch BuildConfig URLs
+        run: |
+          sed -i 's|https://api-agnes-dev\.kiwiar\.com|https://apihub.agnes-ai.com|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/BuildConfig.smali
+          sed -i 's|https://api-agnes-test\.kiwiar\.com|https://apihub.agnes-ai.com|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/BuildConfig.smali
+          sed -i 's|https://api-preview\.agnes-ai\.com/|https://apihub.agnes-ai.com/|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/BuildConfig.smali
+          sed -i 's|https://api\.agnes-ai\.com|https://apihub.agnes-ai.com|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/BuildConfig.smali
+          sed -i 's|https://agnes-test-gcp\.kiwiar\.com/|https://apihub.agnes-ai.com/|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/BuildConfig.smali
+          echo "Patched BuildConfig.smali"
+
+      - name: Patch AgnesApplication URLs
+        run: |
+          sed -i 's|https://api-agnes-test\.kiwiar\.com|https://apihub.agnes-ai.com|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/AgnesApplication.smali
+          sed -i 's|https://api-agnes-dev\.kiwiar\.com|https://apihub.agnes-ai.com|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/AgnesApplication.smali
+          sed -i 's|https://api\.agnes-ai\.com|https://apihub.agnes-ai.com|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/AgnesApplication.smali
+          sed -i 's|https://api-preview\.agnes-ai\.com/|https://apihub.agnes-ai.com/|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/AgnesApplication.smali
+          sed -i 's|https://agnes-test-gcp\.kiwiar\.com/|https://apihub.agnes-ai.com/|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/AgnesApplication.smali
+          echo "Patched AgnesApplication.smali"
+
+      - name: Rebuild APK
+        run: |
+          apktool b /tmp/apk-work/apktool -o /tmp/apk-work/agnes-patched-unsigned.apk
+
+      - name: Generate debug keystore
+        run: |
+          keytool -genkeypair -v -keystore /tmp/debug.keystore -keyalg RSA -keysize 2048 -validity 10000 \
+            -alias debug -storepass android -keypass android \
+            -dname "CN=Debug, OU=Dev, O=OpenAgnes, L=, S=, C=US"
+
+      - name: Sign APK
+        run: |
+          $buildTools = "/tmp/android-sdk/android-34"
+          & "$buildTools/apksigner" sign --ks /tmp/debug.keystore \
+            --ks-pass pass:android --key-pass pass:android \
+            --out /tmp/apk-work/agnes-patched-signed.apk \
+            /tmp/apk-work/agnes-patched-unsigned.apk
+          & "$buildTools/apksigner" verify -v /tmp/apk-work/agnes-patched-signed.apk
+
+      - name: Align and copy output
+        run: |
+          $buildTools = "/tmp/android-sdk/android-34"
+          & "$buildTools/zipalign" -v 4 /tmp/apk-work/agnes-patched-signed.apk /tmp/apk-work/agnes-final.apk
+          mkdir -p modified
+          cp /tmp/apk-work/agnes-final.apk modified/Agnes-3.0.47-AgnesAI.apk
+
+      - name: Upload patched APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Agnes-3.0.47-AgnesAI
+          path: modified/Agnes-3.0.47-AgnesAI.apk
+          retention-days: 7
+
+      - name: Show APK info
+        run: |
+          ls -lh modified/
+          echo "Build complete!"
