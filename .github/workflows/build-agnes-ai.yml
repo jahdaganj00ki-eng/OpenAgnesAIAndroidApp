@@ -10,6 +10,9 @@ jobs:
   build-apk:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      ANDROID_HOME: /usr/local/lib/android
+      BUILD_TOOLS_VERSION: 34.0.0
 
     steps:
       - name: Checkout repo
@@ -27,18 +30,14 @@ jobs:
           sudo apt-get install -y apktool
           apktool --version
 
-      - name: Install Android SDK build tools
-        run: |
-          sudo apt-get install -y wget unzip
-          wget -q https://dl.google.com/android/repository/build-tools/34.0.0/android-34.zip -O /tmp/build-tools.zip
-          unzip -q /tmp/build-tools.zip -d /tmp/android-sdk
-          echo "/tmp/android-sdk/android-34" >> $GITHUB_PATH
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Extract base APK
         run: |
           mkdir -p /tmp/apk-work
           python3 -c "
-          import zipfile, shutil, os
+          import zipfile, os
           src = 'Original-App/Agnes 3.0.47.apk+'
           dst = '/tmp/apk-work/base.apk'
           with zipfile.ZipFile(src, 'r') as z:
@@ -79,18 +78,21 @@ jobs:
             -dname "CN=Debug, OU=Dev, O=OpenAgnes, L=, S=, C=US"
 
       - name: Sign APK
+        env:
+          BUILD_TOOLS: ${{ env.ANDROID_HOME }}/build-tools/${{ env.BUILD_TOOLS_VERSION }}
         run: |
-          $buildTools = "/tmp/android-sdk/android-34"
-          & "$buildTools/apksigner" sign --ks /tmp/debug.keystore \
+          ls -la "$BUILD_TOOLS"
+          "$BUILD_TOOLS/apksigner" sign --ks /tmp/debug.keystore \
             --ks-pass pass:android --key-pass pass:android \
             --out /tmp/apk-work/agnes-patched-signed.apk \
             /tmp/apk-work/agnes-patched-unsigned.apk
-          & "$buildTools/apksigner" verify -v /tmp/apk-work/agnes-patched-signed.apk
+          "$BUILD_TOOLS/apksigner" verify -v /tmp/apk-work/agnes-patched-signed.apk
 
       - name: Align and copy output
+        env:
+          BUILD_TOOLS: ${{ env.ANDROID_HOME }}/build-tools/${{ env.BUILD_TOOLS_VERSION }}
         run: |
-          $buildTools = "/tmp/android-sdk/android-34"
-          & "$buildTools/zipalign" -v 4 /tmp/apk-work/agnes-patched-signed.apk /tmp/apk-work/agnes-final.apk
+          "$BUILD_TOOLS/zipalign" -v 4 /tmp/apk-work/agnes-patched-signed.apk /tmp/apk-work/agnes-final.apk
           mkdir -p modified
           cp /tmp/apk-work/agnes-final.apk modified/Agnes-3.0.47-AgnesAI.apk
 
