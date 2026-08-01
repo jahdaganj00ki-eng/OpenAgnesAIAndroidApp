@@ -24,25 +24,12 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Install apktool
+      - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y apktool
+          sudo apt-get install -y apktool aapt
           apktool --version
-
-      - name: Setup Android SDK with build-tools
-        uses: android-actions/setup-android@v3
-        with:
-          build-tools-version: ${{ env.BUILD_TOOLS_VERSION }}
-          cache-disabled: false
-
-      - name: Verify aapt availability
-        run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          ls -la "$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION"
-          "$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/aapt" version
-          echo "$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION" >> $GITHUB_PATH
+          aapt version
 
       - name: Extract base APK
         run: |
@@ -97,21 +84,14 @@ jobs:
             -dname "CN=Debug, OU=Dev, O=OpenAgnes, L=, S=, C=US"
 
       - name: Sign APK
-        env:
-          BUILD_TOOLS: ${{ env.ANDROID_HOME }}/build-tools/${{ env.BUILD_TOOLS_VERSION }}
         run: |
-          ls -la "$BUILD_TOOLS"
-          "$BUILD_TOOLS/apksigner" sign --ks /tmp/debug.keystore \
-            --ks-pass pass:android --key-pass pass:android \
-            --out /tmp/apk-work/agnes-patched-signed.apk \
+          aapt sign --key-pass-pass pass:android --ks-pass pass:android \
+            --ks /tmp/debug.keystore --out /tmp/apk-work/agnes-patched-signed.apk \
             /tmp/apk-work/agnes-patched-unsigned.apk
-          "$BUILD_TOOLS/apksigner" verify -v /tmp/apk-work/agnes-patched-signed.apk
 
       - name: Align and copy output
-        env:
-          BUILD_TOOLS: ${{ env.ANDROID_HOME }}/build-tools/${{ env.BUILD_TOOLS_VERSION }}
         run: |
-          "$BUILD_TOOLS/zipalign" -v 4 /tmp/apk-work/agnes-patched-signed.apk /tmp/apk-work/agnes-final.apk
+          zipalign -v 4 /tmp/apk-work/agnes-patched-signed.apk /tmp/apk-work/agnes-final.apk
           mkdir -p modified
           cp /tmp/apk-work/agnes-final.apk modified/Agnes-3.0.47-AgnesAI.apk
 
