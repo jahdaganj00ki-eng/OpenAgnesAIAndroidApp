@@ -86,9 +86,13 @@ jobs:
           print(f'Patched APK size: {os.path.getsize(patched_apk)} bytes')
           "
 
+      - name: Align APK before signing
+        run: |
+          zipalign -v 4 /tmp/apk-work/agnes-patched-unsigned.apk /tmp/apk-work/agnes-patched-aligned.apk
+          ls -lh /tmp/apk-work/agnes-patched-aligned.apk
+
       - name: Create debug keystore and sign
         run: |
-          # Use default Android debug keystore location
           mkdir -p /home/runner/.android
           keytool -genkeypair -v -keystore /home/runner/.android/debug.keystore -keyalg RSA -keysize 2048 -validity 10000 \
             -alias androiddebugkey -storepass android -keypass android \
@@ -97,21 +101,21 @@ jobs:
           which apksigner
           apksigner version
           
-          # Sign with debug keystore
           apksigner sign --ks /home/runner/.android/debug.keystore \
             --ks-key-alias androiddebugkey \
             --ks-pass pass:android --key-pass pass:android \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
             --out /tmp/apk-work/agnes-patched-signed.apk \
-            /tmp/apk-work/agnes-patched-unsigned.apk
+            /tmp/apk-work/agnes-patched-aligned.apk
           
-          # Verify signature
           apksigner verify -v /tmp/apk-work/agnes-patched-signed.apk
 
-      - name: Align and copy output
+      - name: Copy output
         run: |
-          zipalign -v 4 /tmp/apk-work/agnes-patched-signed.apk /tmp/apk-work/agnes-final.apk
           mkdir -p modified
-          cp /tmp/apk-work/agnes-final.apk modified/Agnes-3.0.47-AgnesAI.apk
+          cp /tmp/apk-work/agnes-patched-signed.apk modified/Agnes-3.0.47-AgnesAI.apk
 
       - name: Upload patched APK
         uses: actions/upload-artifact@v4
