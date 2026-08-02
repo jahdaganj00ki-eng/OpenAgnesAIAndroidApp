@@ -26,6 +26,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y python3 python3-pip
 
+      - name: Setup Android SDK with build-tools
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 12266719
+          accept-android-sdk-licenses: true
+          log-accepted-android-sdk-licenses: true
+          packages: tools platform-tools build-tools;34.0.0
+
       - name: Extract base APK
         run: |
           mkdir -p /tmp/apk-work
@@ -60,7 +68,6 @@ jobs:
                   changes = 0
                   for item in zin.namelist():
                       data = zin.read(item)
-                      original_len = len(data)
                       if item.endswith('.dex') or item.endswith('.arsc') or item.endswith('.xml'):
                           for old, new in replacements:
                               old_bytes = old.encode('utf-8')
@@ -83,12 +90,6 @@ jobs:
             -dname "CN=Debug, OU=Dev, O=OpenAgnes, L=, S=, C=US"
 
       - name: Sign APK with apksigner
-        uses: android-actions/setup-android@v3
-        with:
-          build-tools-version: 34.0.0
-          cache-disabled: false
-
-      - name: Sign and verify
         env:
           BUILD_TOOLS: /usr/local/lib/android/sdk/build-tools/34.0.0
         run: |
