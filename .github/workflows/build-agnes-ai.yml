@@ -45,7 +45,7 @@ jobs:
           print('Extracted base.apk:', os.path.getsize(dst))
           "
 
-      - name: Patch dex URLs directly in APK
+      - name: Patch dex URLs and strip signatures
         run: |
           python3 -c "
           import zipfile, os
@@ -66,6 +66,11 @@ jobs:
               with zipfile.ZipFile(patched_apk, 'w', zipfile.ZIP_DEFLATED) as zout:
                   changes = 0
                   for item in zin.namelist():
+                      # Skip signature files
+                      if item.startswith('META-INF/'):
+                          print(f'Skipping signature file: {item}')
+                          continue
+                      
                       data = zin.read(item)
                       if item.endswith('.dex') or item.endswith('.arsc') or item.endswith('.xml'):
                           for old, new in replacements:
