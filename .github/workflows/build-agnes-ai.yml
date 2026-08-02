@@ -93,12 +93,15 @@ jobs:
             -alias debug -storepass android -keypass android \
             -dname "CN=Debug, OU=Dev, O=OpenAgnes, L=, S=, C=US"
 
-      - name: Sign APK with apksigner
+      - name: Sign APK with apksigner (v1 + v2 + v3)
         run: |
           which apksigner
           apksigner version
           apksigner sign --ks /tmp/debug.keystore \
             --ks-pass pass:android --key-pass pass:android \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
             --out /tmp/apk-work/agnes-patched-signed.apk \
             /tmp/apk-work/agnes-patched-unsigned.apk
           apksigner verify -v /tmp/apk-work/agnes-patched-signed.apk
