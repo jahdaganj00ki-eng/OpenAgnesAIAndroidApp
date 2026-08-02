@@ -76,11 +76,9 @@ jobs:
 
       - name: Rebuild APK without resources
         run: |
-          which aapt || true
-          aapt version || true
-          ls -la /tmp/android-sdk/build-tools/34.0.0/aapt
-          apktool b /tmp/apk-work/apktool -o /tmp/apk-work/agnes-patched-unsigned.apk --no-res \
-            -a /tmp/android-sdk/build-tools/34.0.0/aapt
+          which aapt aapt2 || true
+          aapt2 version || true
+          apktool b /tmp/apk-work/apktool -o /tmp/apk-work/agnes-patched-unsigned.apk --no-res --use-aapt2
 
       - name: Align APK before signing
         run: |
