@@ -80,7 +80,16 @@ jobs:
                                   data = data.replace(old_bytes, new_bytes)
                                   changes += count
                                   print(f'  {item}: replaced {count}x: {old} -> {new}')
-                      zout.writestr(item, data)
+                      
+                      # Store resources.arsc uncompressed (Android 11+ requirement)
+                      if item == 'resources.arsc':
+                          zinfo = zipfile.ZipInfo(item, date_time=zin.getinfo(item).date_time)
+                          zinfo.compress_type = zipfile.ZIP_STORED
+                          zinfo.external_attr = zin.getinfo(item).external_attr
+                          zout.writestr(zinfo, data)
+                          print(f'Stored uncompressed: {item}')
+                      else:
+                          zout.writestr(item, data)
 
           print(f'Total replacements: {changes}')
           print(f'Patched APK size: {os.path.getsize(patched_apk)} bytes')
