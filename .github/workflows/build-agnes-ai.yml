@@ -10,9 +10,6 @@ jobs:
   build-apk:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      BUILD_TOOLS_VERSION: 34.0.0
 
     steps:
       - name: Checkout repo
@@ -27,9 +24,8 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y apktool aapt
-          apktool --version
-          aapt version
+          sudo apt-get install -y python3 python3-pip
+          pip3 install apkpatcher
 
       - name: Extract base APK
         run: |
@@ -43,39 +39,49 @@ jobs:
           print('Extracted base.apk:', os.path.getsize(dst))
           "
 
-      - name: Decompile with apktool
+      - name: Patch dex URLs directly in APK
         run: |
-          apktool d /tmp/apk-work/base.apk -o /tmp/apk-work/apktool -f
+          python3 -c "
+          import zipfile, os, shutil
 
-      - name: Fix duplicate resource in styles.xml
-        run: |
-          if [ -f /tmp/apk-work/apktool/res/values-v31/styles.xml ]; then
-            sed -i '/android:windowSplashScreenBackground/d' /tmp/apk-work/apktool/res/values-v31/styles.xml
-            sed -i '/android:windowSplashScreenBackground/d' /tmp/apk-work/apktool/res/values-night-v31/styles.xml
-            echo "Fixed duplicate splash screen background"
-          fi
+          base_apk = '/tmp/apk-work/base.apk'
+          patched_apk = '/tmp/apk-work/agnes-patched-unsigned.apk'
 
-      - name: Patch BuildConfig URLs
-        run: |
-          sed -i 's|https://api-agnes-dev\.kiwiar\.com|https://apihub.agnes-ai.com|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/BuildConfig.smali
-          sed -i 's|https://api-agnes-test\.kiwiar\.com|https://apihub.agnes-ai.com|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/BuildConfig.smali
-          sed -i 's|https://api-preview\.agnes-ai\.com/|https://apihub.agnes-ai.com/|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/BuildConfig.smali
-          sed -i 's|https://api\.agnes-ai\.com|https://apihub.agnes-ai.com|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/BuildConfig.smali
-          sed -i 's|https://agnes-test-gcp\.kiwiar\.com/|https://apihub.agnes-ai.com/|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/BuildConfig.smali
-          echo "Patched BuildConfig.smali"
+          # Copy original
+          shutil.copy(base_apk, patched_apk)
 
-      - name: Patch AgnesApplication URLs
-        run: |
-          sed -i 's|https://api-agnes-test\.kiwiar\.com|https://apihub.agnes-ai.com|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/AgnesApplication.smali
-          sed -i 's|https://api-agnes-dev\.kiwiar\.com|https://apihub.agnes-ai.com|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/AgnesApplication.smali
-          sed -i 's|https://api\.agnes-ai\.com|https://apihub.agnes-ai.com|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/AgnesApplication.smali
-          sed -i 's|https://api-preview\.agnes-ai\.com/|https://apihub.agnes-ai.com/|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/AgnesApplication.smali
-          sed -i 's|https://agnes-test-gcp\.kiwiar\.com/|https://apihub.agnes-ai.com/|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/AgnesApplication.smali
-          echo "Patched AgnesApplication.smali"
+          # URLs to replace
+          replacements = [
+              ('https://api.agnes-ai.com', 'https://apihub.agnes-ai.com'),
+              ('https://api-preview.agnes-ai.com/', 'https://apihub.agnes-ai.com/'),
+              ('https://api-agnes-dev.kiwiar.com', 'https://apihub.agnes-ai.com'),
+              ('https://api-agnes-test.kiwiar.com', 'https://apihub.agnes-ai.com'),
+              ('https://agnes-dev.kiwiar.com/', 'https://apihub.agnes-ai.com/'),
+              ('https://agnes-test-gcp.kiwiar.com/', 'https://apihub.agnes-ai.com/'),
+          ]
 
-      - name: Rebuild APK
-        run: |
-          apktool b /tmp/apk-work/apktool -o /tmp/apk-work/agnes-patched-unsigned.apk
+          # Read original APK
+          with open(base_apk, 'rb') as f:
+              data = bytearray(f.read())
+
+          # Apply replacements
+          changes = 0
+          for old, new in replacements:
+              old_bytes = old.encode('utf-8')
+              new_bytes = new.encode('utf-8')
+              if old_bytes in data:
+                  count = data.count(old_bytes)
+                  data = data.replace(old_bytes, new_bytes)
+                  changes += count
+                  print(f'Replaced {count}x: {old} -> {new}')
+
+          # Write patched APK
+          with open(patched_apk, 'wb') as f:
+              f.write(data)
+
+          print(f'Total replacements: {changes}')
+          print(f'Patched APK size: {len(data)} bytes')
+          "
 
       - name: Generate debug keystore
         run: |
@@ -83,15 +89,28 @@ jobs:
             -alias debug -storepass android -keypass android \
             -dname "CN=Debug, OU=Dev, O=OpenAgnes, L=, S=, C=US"
 
-      - name: Sign APK
+      - name: Sign APK with apksigner
+        uses: android-actions/setup-android@v3
+        with:
+          build-tools-version: 34.0.0
+          cache-disabled: false
+
+      - name: Sign and verify
+        env:
+          BUILD_TOOLS: /usr/local/lib/android/sdk/build-tools/34.0.0
         run: |
-          aapt sign --key-pass-pass pass:android --ks-pass pass:android \
-            --ks /tmp/debug.keystore --out /tmp/apk-work/agnes-patched-signed.apk \
+          ls -la "$BUILD_TOOLS/apksigner"
+          "$BUILD_TOOLS/apksigner" sign --ks /tmp/debug.keystore \
+            --ks-pass pass:android --key-pass pass:android \
+            --out /tmp/apk-work/agnes-patched-signed.apk \
             /tmp/apk-work/agnes-patched-unsigned.apk
+          "$BUILD_TOOLS/apksigner" verify -v /tmp/apk-work/agnes-patched-signed.apk
 
       - name: Align and copy output
+        env:
+          BUILD_TOOLS: /usr/local/lib/android/sdk/build-tools/34.0.0
         run: |
-          zipalign -v 4 /tmp/apk-work/agnes-patched-signed.apk /tmp/apk-work/agnes-final.apk
+          "$BUILD_TOOLS/zipalign" -v 4 /tmp/apk-work/agnes-patched-signed.apk /tmp/apk-work/agnes-final.apk
           mkdir -p modified
           cp /tmp/apk-work/agnes-final.apk modified/Agnes-3.0.47-AgnesAI.apk
 
