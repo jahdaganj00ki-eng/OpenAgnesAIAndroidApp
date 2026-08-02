@@ -68,9 +68,22 @@ jobs:
           sed -i 's|https://agnes-test-gcp\.kiwiar\.com/|https://apihub.agnes-ai.com/|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/AgnesApplication.smali
           echo "Patched AgnesApplication.smali"
 
+      - name: Fix duplicate splash screen resource
+        run: |
+          if [ -f /tmp/apk-work/apktool/res/values-v31/styles.xml ]; then
+            sed -i '/android:windowSplashScreenBackground/d' /tmp/apk-work/apktool/res/values-v31/styles.xml
+            sed -i '/android:windowSplashScreenBackground/d' /tmp/apk-work/apktool/res/values-night-v31/styles.xml
+            echo "Fixed duplicate splash screen background"
+          fi
+
       - name: Rebuild APK without resources
         run: |
           apktool b /tmp/apk-work/apktool -o /tmp/apk-work/agnes-patched-unsigned.apk --no-res
+
+      - name: Align APK before signing
+        run: |
+          zipalign -v 4 /tmp/apk-work/agnes-patched-unsigned.apk /tmp/apk-work/agnes-patched-aligned.apk
+          ls -lh /tmp/apk-work/agnes-patched-aligned.apk
 
       - name: Generate debug keystore
         run: |
@@ -89,14 +102,13 @@ jobs:
             --v2-signing-enabled true \
             --v3-signing-enabled true \
             --out /tmp/apk-work/agnes-patched-signed.apk \
-            /tmp/apk-work/agnes-patched-unsigned.apk
+            /tmp/apk-work/agnes-patched-aligned.apk
           apksigner verify -v /tmp/apk-work/agnes-patched-signed.apk
 
-      - name: Align and copy output
+      - name: Copy output
         run: |
-          zipalign -v 4 /tmp/apk-work/agnes-patched-signed.apk /tmp/apk-work/agnes-final.apk
           mkdir -p modified
-          cp /tmp/apk-work/agnes-final.apk modified/Agnes-3.0.47-AgnesAI.apk
+          cp /tmp/apk-work/agnes-patched-signed.apk modified/Agnes-3.0.47-AgnesAI.apk
 
       - name: Upload patched APK
         uses: actions/upload-artifact@v4
