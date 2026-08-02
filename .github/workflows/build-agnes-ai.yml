@@ -66,7 +66,6 @@ jobs:
               with zipfile.ZipFile(patched_apk, 'w', zipfile.ZIP_DEFLATED) as zout:
                   changes = 0
                   for item in zin.namelist():
-                      # Skip signature files
                       if item.startswith('META-INF/'):
                           print(f'Skipping signature file: {item}')
                           continue
@@ -87,23 +86,25 @@ jobs:
           print(f'Patched APK size: {os.path.getsize(patched_apk)} bytes')
           "
 
-      - name: Generate debug keystore
+      - name: Create debug keystore and sign
         run: |
-          keytool -genkeypair -v -keystore /tmp/debug.keystore -keyalg RSA -keysize 2048 -validity 10000 \
-            -alias debug -storepass android -keypass android \
-            -dname "CN=Debug, OU=Dev, O=OpenAgnes, L=, S=, C=US"
-
-      - name: Sign APK with apksigner (v1 + v2 + v3)
-        run: |
+          # Use default Android debug keystore location
+          mkdir -p /home/runner/.android
+          keytool -genkeypair -v -keystore /home/runner/.android/debug.keystore -keyalg RSA -keysize 2048 -validity 10000 \
+            -alias androiddebugkey -storepass android -keypass android \
+            -dname "CN=Android Debug, OU=Android, O=Google, L=Mountain View, S=California, C=US"
+          
           which apksigner
           apksigner version
-          apksigner sign --ks /tmp/debug.keystore \
+          
+          # Sign with debug keystore
+          apksigner sign --ks /home/runner/.android/debug.keystore \
+            --ks-key-alias androiddebugkey \
             --ks-pass pass:android --key-pass pass:android \
-            --v1-signing-enabled true \
-            --v2-signing-enabled true \
-            --v3-signing-enabled true \
             --out /tmp/apk-work/agnes-patched-signed.apk \
             /tmp/apk-work/agnes-patched-unsigned.apk
+          
+          # Verify signature
           apksigner verify -v /tmp/apk-work/agnes-patched-signed.apk
 
       - name: Align and copy output
