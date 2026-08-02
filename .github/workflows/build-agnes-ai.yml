@@ -46,9 +46,9 @@ jobs:
           print('Extracted base.apk:', os.path.getsize(dst))
           "
 
-      - name: Decompile with apktool
+      - name: Decompile with apktool (no resources)
         run: |
-          apktool d /tmp/apk-work/base.apk -o /tmp/apk-work/apktool -f
+          apktool d /tmp/apk-work/base.apk -o /tmp/apk-work/apktool -f --no-res
 
       - name: Patch BuildConfig URLs
         run: |
@@ -68,17 +68,9 @@ jobs:
           sed -i 's|https://agnes-test-gcp\.kiwiar\.com/|https://apihub.agnes-ai.com/|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/AgnesApplication.smali
           echo "Patched AgnesApplication.smali"
 
-      - name: Fix duplicate splash screen resource
-        run: |
-          rm -rf /tmp/apk-work/apktool/res/values-v31
-          rm -rf /tmp/apk-work/apktool/res/values-night-v31
-          echo "Removed values-v31 and values-night-v31 to avoid aapt duplicate errors"
-
       - name: Rebuild APK without resources
         run: |
-          which aapt aapt2 || true
-          aapt2 version || true
-          apktool b /tmp/apk-work/apktool -o /tmp/apk-work/agnes-patched-unsigned.apk --no-res --use-aapt2
+          apktool b /tmp/apk-work/apktool -o /tmp/apk-work/agnes-patched-unsigned.apk
 
       - name: Align APK before signing
         run: |
