@@ -30,11 +30,11 @@ jobs:
         run: |
           mkdir -p /tmp/android-sdk/build-tools
           cd /tmp/android-sdk/build-tools
-          curl -sSL https://dl.google.com/android/repository/build-tools/34.0.0/android-34.0.0-linux.zip -o build-tools.zip
+          curl -sSL https://dl.google.com/android/repository/build-tools/34.0.0/android-34.0.0.zip -o build-tools.zip
           unzip -q build-tools.zip
           rm build-tools.zip
+          ls -la /tmp/android-sdk/build-tools/
           echo "/tmp/android-sdk/build-tools/android-34.0.0" >> $GITHUB_PATH
-          ls -la /tmp/android-sdk/build-tools/android-34.0.0/
 
       - name: Extract base APK
         run: |
