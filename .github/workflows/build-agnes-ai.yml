@@ -25,7 +25,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y python3 python3-pip
-          pip3 install apkpatcher
 
       - name: Extract base APK
         run: |
@@ -42,15 +41,11 @@ jobs:
       - name: Patch dex URLs directly in APK
         run: |
           python3 -c "
-          import zipfile, os, shutil
+          import zipfile, os
 
           base_apk = '/tmp/apk-work/base.apk'
           patched_apk = '/tmp/apk-work/agnes-patched-unsigned.apk'
 
-          # Copy original
-          shutil.copy(base_apk, patched_apk)
-
-          # URLs to replace
           replacements = [
               ('https://api.agnes-ai.com', 'https://apihub.agnes-ai.com'),
               ('https://api-preview.agnes-ai.com/', 'https://apihub.agnes-ai.com/'),
@@ -60,27 +55,25 @@ jobs:
               ('https://agnes-test-gcp.kiwiar.com/', 'https://apihub.agnes-ai.com/'),
           ]
 
-          # Read original APK
-          with open(base_apk, 'rb') as f:
-              data = bytearray(f.read())
-
-          # Apply replacements
-          changes = 0
-          for old, new in replacements:
-              old_bytes = old.encode('utf-8')
-              new_bytes = new.encode('utf-8')
-              if old_bytes in data:
-                  count = data.count(old_bytes)
-                  data = data.replace(old_bytes, new_bytes)
-                  changes += count
-                  print(f'Replaced {count}x: {old} -> {new}')
-
-          # Write patched APK
-          with open(patched_apk, 'wb') as f:
-              f.write(data)
+          with zipfile.ZipFile(base_apk, 'r') as zin:
+              with zipfile.ZipFile(patched_apk, 'w', zipfile.ZIP_DEFLATED) as zout:
+                  changes = 0
+                  for item in zin.namelist():
+                      data = zin.read(item)
+                      original_len = len(data)
+                      if item.endswith('.dex') or item.endswith('.arsc') or item.endswith('.xml'):
+                          for old, new in replacements:
+                              old_bytes = old.encode('utf-8')
+                              new_bytes = new.encode('utf-8')
+                              if old_bytes in data:
+                                  count = data.count(old_bytes)
+                                  data = data.replace(old_bytes, new_bytes)
+                                  changes += count
+                                  print(f'  {item}: replaced {count}x: {old} -> {new}')
+                      zout.writestr(item, data)
 
           print(f'Total replacements: {changes}')
-          print(f'Patched APK size: {len(data)} bytes')
+          print(f'Patched APK size: {os.path.getsize(patched_apk)} bytes')
           "
 
       - name: Generate debug keystore
