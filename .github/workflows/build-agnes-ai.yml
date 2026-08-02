@@ -45,86 +45,57 @@ jobs:
           print('Extracted base.apk:', os.path.getsize(dst))
           "
 
-      - name: Patch dex URLs and strip signatures
+      - name: Decompile with apktool
         run: |
-          python3 -c "
-          import zipfile, os
+          apktool d /tmp/apk-work/base.apk -o /tmp/apk-work/apktool -f
 
-          base_apk = '/tmp/apk-work/base.apk'
-          patched_apk = '/tmp/apk-work/agnes-patched-unsigned.apk'
-
-          replacements = [
-              ('https://api.agnes-ai.com', 'https://apihub.agnes-ai.com'),
-              ('https://api-preview.agnes-ai.com/', 'https://apihub.agnes-ai.com/'),
-              ('https://api-agnes-dev.kiwiar.com', 'https://apihub.agnes-ai.com'),
-              ('https://api-agnes-test.kiwiar.com', 'https://apihub.agnes-ai.com'),
-              ('https://agnes-dev.kiwiar.com/', 'https://apihub.agnes-ai.com/'),
-              ('https://agnes-test-gcp.kiwiar.com/', 'https://apihub.agnes-ai.com/'),
-          ]
-
-          with zipfile.ZipFile(base_apk, 'r') as zin:
-              with zipfile.ZipFile(patched_apk, 'w', zipfile.ZIP_DEFLATED) as zout:
-                  changes = 0
-                  for item in zin.namelist():
-                      if item.startswith('META-INF/'):
-                          print(f'Skipping signature file: {item}')
-                          continue
-                      
-                      data = zin.read(item)
-                      if item.endswith('.dex') or item.endswith('.arsc') or item.endswith('.xml'):
-                          for old, new in replacements:
-                              old_bytes = old.encode('utf-8')
-                              new_bytes = new.encode('utf-8')
-                              if old_bytes in data:
-                                  count = data.count(old_bytes)
-                                  data = data.replace(old_bytes, new_bytes)
-                                  changes += count
-                                  print(f'  {item}: replaced {count}x: {old} -> {new}')
-                      
-                      # Store resources.arsc uncompressed (Android 11+ requirement)
-                      if item == 'resources.arsc':
-                          zinfo = zipfile.ZipInfo(item, date_time=zin.getinfo(item).date_time)
-                          zinfo.compress_type = zipfile.ZIP_STORED
-                          zinfo.external_attr = zin.getinfo(item).external_attr
-                          zout.writestr(zinfo, data)
-                          print(f'Stored uncompressed: {item}')
-                      else:
-                          zout.writestr(item, data)
-
-          print(f'Total replacements: {changes}')
-          print(f'Patched APK size: {os.path.getsize(patched_apk)} bytes')
-          "
-
-      - name: Align APK before signing
+      - name: Patch BuildConfig URLs
         run: |
-          zipalign -v 4 /tmp/apk-work/agnes-patched-unsigned.apk /tmp/apk-work/agnes-patched-aligned.apk
-          ls -lh /tmp/apk-work/agnes-patched-aligned.apk
+          sed -i 's|https://api-agnes-dev\.kiwiar\.com|https://apihub.agnes-ai.com|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/BuildConfig.smali
+          sed -i 's|https://api-agnes-test\.kiwiar\.com|https://apihub.agnes-ai.com|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/BuildConfig.smali
+          sed -i 's|https://api-preview\.agnes-ai\.com/|https://apihub.agnes-ai.com/|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/BuildConfig.smali
+          sed -i 's|https://api\.agnes-ai\.com|https://apihub.agnes-ai.com|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/BuildConfig.smali
+          sed -i 's|https://agnes-test-gcp\.kiwiar\.com/|https://apihub.agnes-ai.com/|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/BuildConfig.smali
+          echo "Patched BuildConfig.smali"
 
-      - name: Create debug keystore and sign
+      - name: Patch AgnesApplication URLs
         run: |
-          mkdir -p /home/runner/.android
-          keytool -genkeypair -v -keystore /home/runner/.android/debug.keystore -keyalg RSA -keysize 2048 -validity 10000 \
+          sed -i 's|https://api-agnes-test\.kiwiar\.com|https://apihub.agnes-ai.com|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/AgnesApplication.smali
+          sed -i 's|https://api-agnes-dev\.kiwiar\.com|https://apihub.agnes-ai.com|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/AgnesApplication.smali
+          sed -i 's|https://api\.agnes-ai\.com|https://apihub.agnes-ai.com|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/AgnesApplication.smali
+          sed -i 's|https://api-preview\.agnes-ai\.com/|https://apihub.agnes-ai.com/|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/AgnesApplication.smali
+          sed -i 's|https://agnes-test-gcp\.kiwiar\.com/|https://apihub.agnes-ai.com/|g' /tmp/apk-work/apktool/smali/com/agnes/bundle_agnes/AgnesApplication.smali
+          echo "Patched AgnesApplication.smali"
+
+      - name: Rebuild APK without resources
+        run: |
+          apktool b /tmp/apk-work/apktool -o /tmp/apk-work/agnes-patched-unsigned.apk --no-res
+
+      - name: Generate debug keystore
+        run: |
+          keytool -genkeypair -v -keystore /tmp/debug.keystore -keyalg RSA -keysize 2048 -validity 10000 \
             -alias androiddebugkey -storepass android -keypass android \
             -dname "CN=Android Debug, OU=Android, O=Google, L=Mountain View, S=California, C=US"
-          
+
+      - name: Sign APK with apksigner
+        run: |
           which apksigner
           apksigner version
-          
-          apksigner sign --ks /home/runner/.android/debug.keystore \
+          apksigner sign --ks /tmp/debug.keystore \
             --ks-key-alias androiddebugkey \
             --ks-pass pass:android --key-pass pass:android \
             --v1-signing-enabled true \
             --v2-signing-enabled true \
             --v3-signing-enabled true \
             --out /tmp/apk-work/agnes-patched-signed.apk \
-            /tmp/apk-work/agnes-patched-aligned.apk
-          
+            /tmp/apk-work/agnes-patched-unsigned.apk
           apksigner verify -v /tmp/apk-work/agnes-patched-signed.apk
 
-      - name: Copy output
+      - name: Align and copy output
         run: |
+          zipalign -v 4 /tmp/apk-work/agnes-patched-signed.apk /tmp/apk-work/agnes-final.apk
           mkdir -p modified
-          cp /tmp/apk-work/agnes-patched-signed.apk modified/Agnes-3.0.47-AgnesAI.apk
+          cp /tmp/apk-work/agnes-final.apk modified/Agnes-3.0.47-AgnesAI.apk
 
       - name: Upload patched APK
         uses: actions/upload-artifact@v4
