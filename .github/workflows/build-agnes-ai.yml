@@ -26,15 +26,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y python3 python3-pip curl unzip
 
-      - name: Download Android build-tools
+      - name: Install Android build-tools via sdkmanager
         run: |
           mkdir -p /tmp/android-sdk/build-tools
-          cd /tmp/android-sdk/build-tools
-          curl -sSL https://dl.google.com/android/repository/build-tools/34.0.0/android-34.0.0.zip -o build-tools.zip
-          unzip -q build-tools.zip
-          rm build-tools.zip
-          ls -la /tmp/android-sdk/build-tools/
-          echo "/tmp/android-sdk/build-tools/android-34.0.0" >> $GITHUB_PATH
+          yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=/tmp/android-sdk "build-tools;34.0.0" "platform-tools"
+          ls -la /tmp/android-sdk/build-tools/34.0.0/
+          echo "/tmp/android-sdk/build-tools/34.0.0" >> $GITHUB_PATH
 
       - name: Extract base APK
         run: |
