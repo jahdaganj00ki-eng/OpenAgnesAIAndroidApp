@@ -24,15 +24,17 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3 python3-pip
+          sudo apt-get install -y python3 python3-pip curl unzip
 
-      - name: Setup Android SDK with build-tools
-        uses: android-actions/setup-android@v3
-        with:
-          cmdline-tools-version: 12266719
-          accept-android-sdk-licenses: true
-          log-accepted-android-sdk-licenses: true
-          packages: tools platform-tools build-tools;34.0.0
+      - name: Download Android build-tools
+        run: |
+          mkdir -p /tmp/android-sdk/build-tools
+          cd /tmp/android-sdk/build-tools
+          curl -sSL https://dl.google.com/android/repository/build-tools/34.0.0/android-34.0.0-linux.zip -o build-tools.zip
+          unzip -q build-tools.zip
+          rm build-tools.zip
+          echo "/tmp/android-sdk/build-tools/android-34.0.0" >> $GITHUB_PATH
+          ls -la /tmp/android-sdk/build-tools/android-34.0.0/
 
       - name: Extract base APK
         run: |
@@ -90,21 +92,18 @@ jobs:
             -dname "CN=Debug, OU=Dev, O=OpenAgnes, L=, S=, C=US"
 
       - name: Sign APK with apksigner
-        env:
-          BUILD_TOOLS: /usr/local/lib/android/sdk/build-tools/34.0.0
         run: |
-          ls -la "$BUILD_TOOLS/apksigner"
-          "$BUILD_TOOLS/apksigner" sign --ks /tmp/debug.keystore \
+          which apksigner
+          apksigner version
+          apksigner sign --ks /tmp/debug.keystore \
             --ks-pass pass:android --key-pass pass:android \
             --out /tmp/apk-work/agnes-patched-signed.apk \
             /tmp/apk-work/agnes-patched-unsigned.apk
-          "$BUILD_TOOLS/apksigner" verify -v /tmp/apk-work/agnes-patched-signed.apk
+          apksigner verify -v /tmp/apk-work/agnes-patched-signed.apk
 
       - name: Align and copy output
-        env:
-          BUILD_TOOLS: /usr/local/lib/android/sdk/build-tools/34.0.0
         run: |
-          "$BUILD_TOOLS/zipalign" -v 4 /tmp/apk-work/agnes-patched-signed.apk /tmp/apk-work/agnes-final.apk
+          zipalign -v 4 /tmp/apk-work/agnes-patched-signed.apk /tmp/apk-work/agnes-final.apk
           mkdir -p modified
           cp /tmp/apk-work/agnes-final.apk modified/Agnes-3.0.47-AgnesAI.apk
 
